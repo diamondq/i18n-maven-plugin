@@ -5,11 +5,11 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.diamondq.maven</groupId>
     <artifactId>i18n-maven-plugin</artifactId>
-    <version>1.0</version>
+    <version>1.0.0</version>
     <packaging>maven-plugin</packaging>
     <name>i18n-maven-plugin Maven Plugin</name>
-    <!-- FIXME change it to the project's website -->
-    <url>http://www.example.com</url>
+    <description>Helps with I18N processes such as generating a String Enum for all keys in a properties file.</description>
+    <url>https://github.com/diamondq/i18n-maven-plugin</url>
     <prerequisites>
         <maven>${maven.version}</maven>
     </prerequisites>
@@ -18,7 +18,38 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <maven.version>3.5.3</maven.version>
+        <gpg.arg1>--pinentry-mode</gpg.arg1>
+        <gpg.arg2>loopback</gpg.arg2>
     </properties>
+    <distributionManagement>
+        <snapshotRepository>
+            <id>ossrh</id>
+            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+        </snapshotRepository>
+        <repository>
+            <id>ossrh</id>
+            <url>https://oss.sonatype.org/service/local/staging/deploy/maven2/</url>
+        </repository>
+    </distributionManagement>
+    <licenses>
+        <license>
+            <name>The Apache License, Version 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+        </license>
+    </licenses>
+    <developers>
+        <developer>
+            <name>Mike Mansell</name>
+            <email>code@michaelmansell.com</email>
+            <organization>DiamondQ</organization>
+            <organizationUrl>http://www.diamondq.com</organizationUrl>
+        </developer>
+    </developers>
+    <scm>
+        <connection>scm:git:git:github.com:diamondq/i18n-maven-plugin.git</connection>
+        <developerConnection>scm:git:ssh://github.com:diamondq/i18n-maven-plugin.git</developerConnection>
+        <url>https://github.com/diamondq/i18n-maven-plugin/tree/master</url>
+    </scm>
     <dependencies>
         <dependency>
             <groupId>org.apache.maven</groupId>
@@ -109,9 +140,30 @@
                     <artifactId>maven-invoker-plugin</artifactId>
                     <version>3.0.1</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-gpg-plugin</artifactId>
+                    <version>1.6</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.sonatype.plugins</groupId>
+                    <artifactId>nexus-staging-maven-plugin</artifactId>
+                    <version>1.6.7</version>
+                </plugin>
             </plugins>
         </pluginManagement>
         <plugins>
+            <plugin>
+                <groupId>org.sonatype.plugins</groupId>
+                <artifactId>nexus-staging-maven-plugin</artifactId>
+                <version>1.6.7</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <serverId>ossrh</serverId>
+                    <nexusUrl>https://oss.sonatype.org/</nexusUrl>
+                    <autoReleaseAfterClose>true</autoReleaseAfterClose>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-plugin-plugin</artifactId>
@@ -136,4 +188,38 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <profile>
+            <id>cli</id>
+            <activation>
+                <property>
+                    <name>jenkins</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                                <configuration>
+                                    <gpgArguments>
+                                        <arg>${gpg.arg1}</arg>
+                                        <arg>${gpg.arg2}</arg>
+                                    </gpgArguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
