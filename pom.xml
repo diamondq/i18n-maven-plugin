@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.diamondq.maven</groupId>
     <artifactId>i18n-maven-plugin</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packaging>maven-plugin</packaging>
     <name>i18n-maven-plugin Maven Plugin</name>
     <description>Helps with I18N processes such as generating a String Enum for all keys in a properties file.</description>
@@ -17,7 +17,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <maven.version>3.5.3</maven.version>
+        <maven.version>3.5.2</maven.version>
         <gpg.arg1>--pinentry-mode</gpg.arg1>
         <gpg.arg2>loopback</gpg.arg2>
     </properties>
