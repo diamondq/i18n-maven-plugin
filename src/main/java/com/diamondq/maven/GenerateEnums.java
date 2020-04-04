@@ -7,9 +7,13 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 
 import org.apache.maven.plugin.AbstractMojo;
@@ -26,353 +30,400 @@ import org.sonatype.plexus.build.incremental.BuildContext;
  */
 @Mojo(name = "generateEnums", defaultPhase = LifecyclePhase.GENERATE_SOURCES)
 public class GenerateEnums extends AbstractMojo {
-	@Component
-	protected BuildContext	buildContext;
+  @Component
+  protected BuildContext buildContext;
 
-	/**
-	 * Location of the inputFile.
-	 */
-	@Parameter(defaultValue = "${project.build.directory}/generated-sources/i18n", property = "outputDir",
-		required = true)
-	private File			outputDirectory;
+  /**
+   * Location of the inputFile.
+   */
+  @Parameter(defaultValue = "${project.build.directory}/generated-sources/i18n", property = "outputDir",
+    required = true)
+  private File           outputDirectory;
 
-	@Parameter(property = "propsDir", required = true)
-	private File			propsDir;
+  @Parameter(property = "propsDir", required = true)
+  private File           propsDir;
 
-	/**
-	 * The suffix of the properties inputFile
-	 */
-	@Parameter(defaultValue = ".properties", required = true)
-	private String			propsSuffix;
+  /**
+   * The suffix of the properties inputFile
+   */
+  @Parameter(defaultValue = ".properties", required = true)
+  private String         propsSuffix;
 
-	/**
-	 * Whether to recursive down the props directory.
-	 */
-	@Parameter(defaultValue = "true", required = true)
-	private boolean			recurse;
+  /**
+   * Whether to recursive down the props directory.
+   */
+  @Parameter(defaultValue = "true", required = true)
+  private boolean        recurse;
 
-	@Parameter(defaultValue = "_", required = true)
-	private String			packageSeparator;
+  @Parameter(defaultValue = "_", required = true)
+  private String         packageSeparator;
 
-	@Parameter(required = false)
-	private String[]		keyPrefixes;
+  @Parameter(required = false)
+  private String[]       keyPrefixes;
 
-	@Parameter(required = false)
-	private String			implementsClass;
+  @Parameter(required = false)
+  private String         implementsClass;
 
-	private StringBuilder	debugBuilder;
+  @Parameter(required = false)
+  private String         resourceBundleLoaderClass;
 
-	private static class IntakeFile {
-		/**
-		 * The file that contains the properties to read
-		 */
-		public final File		inputFile;
+  private StringBuilder  debugBuilder;
 
-		/**
-		 * The file that will contain the enumeration
-		 */
-		public final File		outputFile;
+  private static class IntakeFile {
+    /**
+     * The file that contains the properties to read
+     */
+    public final File     inputFile;
 
-		/**
-		 * The name of the output file (no path, and no suffix)
-		 */
-		public final String		outputName;
+    /**
+     * The file that will contain the enumeration
+     */
+    public final File     outputFile;
 
-		/**
-		 * The name of the input file (no path, and no suffix)
-		 */
-		public final String		inputName;
+    /**
+     * The name of the output file (no path, and no suffix)
+     */
+    public final String   outputName;
 
-		public final String[]	packageName;
+    /**
+     * The name of the input file (no path, and no suffix)
+     */
+    public final String   inputName;
 
-		public final String		javaPackageName;
+    public final String[] packageName;
 
-		public final Path		relPath;
+    public final String   javaPackageName;
 
-		public IntakeFile(File pInputFile, String pInputName, File pOutputFile, String pOutputName,
-			String[] pPackageName, String pJavaPackageName, Path pRelPath) {
-			super();
-			inputFile = pInputFile;
-			inputName = pInputName;
-			outputFile = pOutputFile;
-			outputName = pOutputName;
-			packageName = pPackageName;
-			javaPackageName = pJavaPackageName;
-			relPath = pRelPath;
-		}
+    public final Path     relPath;
 
-		@Override
-		public String toString() {
-			StringBuilder sb = new StringBuilder();
-			sb.append("IntakeFile[inputFile=").append(inputFile).append(", packageName=[")
-				.append(String.join(", ", packageName));
-			sb.append("], javaPackageName=").append(javaPackageName).append(", relPath=").append(relPath).append("]");
-			return sb.toString();
-		}
-	}
+    public IntakeFile(File pInputFile, String pInputName, File pOutputFile, String pOutputName, String[] pPackageName,
+      String pJavaPackageName, Path pRelPath) {
+      super();
+      inputFile = pInputFile;
+      inputName = pInputName;
+      outputFile = pOutputFile;
+      outputName = pOutputName;
+      packageName = pPackageName;
+      javaPackageName = pJavaPackageName;
+      relPath = pRelPath;
+    }
 
-	@SuppressWarnings("unused")
-	private void recurseDirectory(File pDir, File pRootDir, File pOutputDir, List<IntakeFile> pResults) {
-		for (File file : pDir.listFiles()) {
-			if (file.isDirectory() == true)
-				recurseDirectory(file, pRootDir, pOutputDir, pResults);
-			else if (file.isFile() == true) {
-				if (file.getName().endsWith(propsSuffix)) {
-					buildIntakeFile(pRootDir, pOutputDir, pResults, file);
-				}
-			}
-		}
-	}
+    @Override
+    public String toString() {
+      StringBuilder sb = new StringBuilder();
+      sb.append("IntakeFile[inputFile=").append(inputFile).append(", packageName=[")
+        .append(String.join(", ", packageName));
+      sb.append("], javaPackageName=").append(javaPackageName).append(", relPath=").append(relPath).append("]");
+      return sb.toString();
+    }
+  }
 
-	private void buildIntakeFile(File pInputDir, File pOutputDir, List<IntakeFile> pResults, File pFile) {
+  @SuppressWarnings("unused")
+  private void recurseDirectory(File pDir, File pRootDir, File pOutputDir, List<IntakeFile> pResults) {
+    for (File file : pDir.listFiles()) {
+      if (file.isDirectory() == true)
+        recurseDirectory(file, pRootDir, pOutputDir, pResults);
+      else if (file.isFile() == true) {
+        if (file.getName().endsWith(propsSuffix)) {
+          buildIntakeFile(pRootDir, pOutputDir, pResults, file);
+        }
+      }
+    }
+  }
 
-		/* Generate the relative path between the file and the root of the input directory */
+  private void buildIntakeFile(File pInputDir, File pOutputDir, List<IntakeFile> pResults, File pFile) {
 
-		Path relPath = pInputDir.toPath().relativize(pFile.getParentFile().toPath());
+    /* Generate the relative path between the file and the root of the input directory */
 
-		/* Generate the output file */
+    Path relPath = pInputDir.toPath().relativize(pFile.getParentFile().toPath());
 
-		String outName = pFile.getName();
-		int offset = outName.lastIndexOf('.');
-		if (offset != -1)
-			outName = outName.substring(0, offset);
-		String inName = outName;
-		if (Character.isUpperCase(outName.charAt(0)) == false)
-			outName = Character.toUpperCase(outName.charAt(0)) + outName.substring(1);
-		File outputFile = pOutputDir.toPath().resolve(relPath).resolve(outName + ".java").toFile();
+    /* Generate the output file */
 
-		/* Check to see if the output file is 'up-to-date' */
+    String outName = pFile.getName();
+    int offset = outName.lastIndexOf('.');
+    if (offset != -1)
+      outName = outName.substring(0, offset);
+    String inName = outName;
+    if (Character.isUpperCase(outName.charAt(0)) == false)
+      outName = Character.toUpperCase(outName.charAt(0)) + outName.substring(1);
+    File outputFile = pOutputDir.toPath().resolve(relPath).resolve(outName + ".java").toFile();
 
-		if (buildContext.isUptodate(outputFile, pFile) == true)
-			return;
+    /* Check to see if the output file is 'up-to-date' */
 
-		/* Build the information needed for processing */
+    if (buildContext.isUptodate(outputFile, pFile) == true)
+      return;
 
-		String packageBuilder = "";
-		List<String> packageList = new ArrayList<>();
-		for (int i = relPath.getNameCount() - 1; i >= 0; i--) {
-			packageBuilder = relPath.getName(i) + packageSeparator + packageBuilder;
-			packageList.add(0, packageBuilder.toUpperCase(Locale.ENGLISH));
-		}
-		StringBuilder javaPackageBuilder = new StringBuilder();
-		for (int i = 0; i < relPath.getNameCount(); i++) {
-			if (i > 0)
-				javaPackageBuilder.append('.');
-			javaPackageBuilder.append(relPath.getName(i));
-		}
+    /* Build the information needed for processing */
 
-		pResults.add(new IntakeFile(pFile, inName, outputFile, outName, packageList.toArray(new String[0]),
-			javaPackageBuilder.toString(), relPath));
-	}
+    String packageBuilder = "";
+    List<String> packageList = new ArrayList<>();
+    for (int i = relPath.getNameCount() - 1; i >= 0; i--) {
+      packageBuilder = relPath.getName(i) + packageSeparator + packageBuilder;
+      packageList.add(0, packageBuilder.toUpperCase(Locale.ENGLISH));
+    }
+    StringBuilder javaPackageBuilder = new StringBuilder();
+    for (int i = 0; i < relPath.getNameCount(); i++) {
+      if (i > 0)
+        javaPackageBuilder.append('.');
+      javaPackageBuilder.append(relPath.getName(i));
+    }
 
-	private List<IntakeFile> processPropsDir() throws MojoExecutionException {
-		File inDir = propsDir;
-		if ((inDir == null) || (inDir.exists() == false))
-			throw new MojoExecutionException(
-				"The propsDir " + (inDir == null ? "" : inDir.toString()) + " doesn't exist");
-		File outDir = outputDirectory;
-		inDir = inDir.getAbsoluteFile();
-		List<IntakeFile> results = new ArrayList<>();
-		Scanner scanner = buildContext.newScanner(inDir, true);
-		scanner.setIncludes(new String[] {"**/*" + propsSuffix});
-		scanner.scan();
-		String[] includedFiles = scanner.getIncludedFiles();
-		if (includedFiles != null) {
-			for (String includedFile : includedFiles) {
-				File file = new File(scanner.getBasedir(), includedFile);
-				buildIntakeFile(inDir, outDir, results, file);
-			}
-		}
+    pResults.add(new IntakeFile(pFile, inName, outputFile, outName, packageList.toArray(new String[0]),
+      javaPackageBuilder.toString(), relPath));
+  }
 
-		// recurseDirectory(inDir, inDir, results);
-		return results;
-	}
+  private List<IntakeFile> processPropsDir() throws MojoExecutionException {
+    File inDir = propsDir;
+    if ((inDir == null) || (inDir.exists() == false))
+      throw new MojoExecutionException("The propsDir " + (inDir == null ? "" : inDir.toString()) + " doesn't exist");
+    File outDir = outputDirectory;
+    inDir = inDir.getAbsoluteFile();
+    List<IntakeFile> results = new ArrayList<>();
+    Scanner scanner = buildContext.newScanner(inDir, true);
+    scanner.setIncludes(new String[] {"**/*" + propsSuffix});
+    scanner.scan();
+    String[] includedFiles = scanner.getIncludedFiles();
+    if (includedFiles != null) {
+      for (String includedFile : includedFiles) {
+        File file = new File(scanner.getBasedir(), includedFile);
+        buildIntakeFile(inDir, outDir, results, file);
+      }
+    }
 
-	@Override
-	public void execute() throws MojoExecutionException {
+    // recurseDirectory(inDir, inDir, results);
+    return results;
+  }
 
-		debugBuilder = new StringBuilder();
+  @Override
+  public void execute() throws MojoExecutionException {
 
-		if (buildContext == null)
-			throw new MojoExecutionException("BuildContext was not set.");
+    debugBuilder = new StringBuilder();
 
-		handleDefaults();
+    if (buildContext == null)
+      throw new MojoExecutionException("BuildContext was not set.");
 
-		File outDir = outputDirectory;
+    handleDefaults();
 
-		if (!outDir.exists())
-			outDir.mkdirs();
+    File outDir = outputDirectory;
 
-		boolean failed = false;
+    if (!outDir.exists())
+      outDir.mkdirs();
 
-		Scanner deleteScanner = buildContext.newDeleteScanner(propsDir);
-		deleteScanner.setIncludes(new String[] {"**/*" + propsSuffix});
-		deleteScanner.scan();
-		String[] deletedFiles = deleteScanner.getIncludedFiles();
-		if (deletedFiles != null) {
-			for (String deletedFile : deletedFiles) {
-				File file = new File(deleteScanner.getBasedir(), deletedFile);
+    boolean failed = false;
 
-				/* Generate the relative path between the file and the root of the input directory */
+    Scanner deleteScanner = buildContext.newDeleteScanner(propsDir);
+    deleteScanner.setIncludes(new String[] {"**/*" + propsSuffix});
+    deleteScanner.scan();
+    String[] deletedFiles = deleteScanner.getIncludedFiles();
+    if (deletedFiles != null) {
+      for (String deletedFile : deletedFiles) {
+        File file = new File(deleteScanner.getBasedir(), deletedFile);
 
-				Path relPath = propsDir.toPath().relativize(file.getParentFile().toPath());
+        /* Generate the relative path between the file and the root of the input directory */
 
-				/* Generate the output file */
+        Path relPath = propsDir.toPath().relativize(file.getParentFile().toPath());
 
-				String outName = file.getName();
-				int offset = outName.lastIndexOf('.');
-				if (offset != -1)
-					outName = outName.substring(0, offset);
-				if (Character.isUpperCase(outName.charAt(0)) == false)
-					outName = Character.toUpperCase(outName.charAt(0)) + outName.substring(1);
-				File outputFile = outputDirectory.toPath().resolve(relPath).resolve(outName + ".java").toFile();
-				if (outputFile.exists() == true) {
-					outputFile.delete();
-					buildContext.refresh(outputFile);
-				}
-			}
-		}
+        /* Generate the output file */
 
-		/* For each inputFile to process */
+        String outName = file.getName();
+        int offset = outName.lastIndexOf('.');
+        if (offset != -1)
+          outName = outName.substring(0, offset);
+        if (Character.isUpperCase(outName.charAt(0)) == false)
+          outName = Character.toUpperCase(outName.charAt(0)) + outName.substring(1);
+        File outputFile = outputDirectory.toPath().resolve(relPath).resolve(outName + ".java").toFile();
+        if (outputFile.exists() == true) {
+          outputFile.delete();
+          buildContext.refresh(outputFile);
+        }
+      }
+    }
 
-		for (IntakeFile intakeFile : processPropsDir()) {
+    /* For each inputFile to process */
 
-			getLog().info("Processing: " + intakeFile.inputFile.getAbsolutePath());
-			// debugBuilder.append("Processing: " + intakeFile.file + "\n");
-			// debugBuilder.append("BuildContext3: " + (buildContext == null ? "(NULL)" : buildContext.toString()) +
-			// "\n");
+    for (IntakeFile intakeFile : processPropsDir()) {
 
-			/* Read the properties inputFile */
+      getLog().info("Processing: " + intakeFile.inputFile.getAbsolutePath());
+      // debugBuilder.append("Processing: " + intakeFile.file + "\n");
+      // debugBuilder.append("BuildContext3: " + (buildContext == null ? "(NULL)" : buildContext.toString()) +
+      // "\n");
 
-			Properties p = new Properties();
-			try {
-				p.load(new FileReader(intakeFile.inputFile));
-			}
-			catch (IOException ex) {
-				buildContext.addMessage(intakeFile.inputFile.getAbsoluteFile(), 0, 0, "Unable to parse inputFile",
-					BuildContext.SEVERITY_ERROR, ex);
-				failed = true;
-				continue;
-			}
+      /* Read the properties inputFile */
 
-			/* Now generate an enum class */
+      Properties p = new Properties();
+      try {
+        p.load(new FileReader(intakeFile.inputFile));
+      }
+      catch (IOException ex) {
+        buildContext.addMessage(intakeFile.inputFile.getAbsoluteFile(), 0, 0, "Unable to parse inputFile",
+          BuildContext.SEVERITY_ERROR, ex);
+        failed = true;
+        continue;
+      }
 
-			if (intakeFile.outputFile.getParentFile().exists() == false)
-				intakeFile.outputFile.getParentFile().mkdirs();
-			try {
-				try (FileWriter fw = new FileWriter(intakeFile.outputFile)) {
-					try (BufferedWriter bw = new BufferedWriter(fw)) {
-						dumpDebug(bw);
-						bw.append("package ");
-						bw.append(intakeFile.javaPackageName);
-						bw.append(";\n");
-						bw.append("\n");
-						if ((implementsClass != null) && (implementsClass.isEmpty() == false)) {
-							bw.append("import ").append(implementsClass).append(";\n");
-							bw.append("\n");
-						}
-						bw.append("import java.util.Locale;\n");
-						bw.append("import java.util.ResourceBundle;\n");
-						bw.append("\n");
+      /* Now generate an enum class */
 
-						bw.append("public enum ");
-						bw.append(intakeFile.outputName);
-						if ((implementsClass != null) && (implementsClass.isEmpty() == false)) {
-							int implementsOffset = implementsClass.lastIndexOf('.');
-							String className;
-							if (implementsOffset == -1)
-								className = implementsClass;
-							else
-								className = implementsClass.substring(implementsOffset + 1);
-							bw.append(" implements ").append(className);
-						}
-						bw.append(" {\n");
-						bw.append("\n");
-						boolean isFirst = true;
-						List<String> keys = new ArrayList<>();
-						for (Object keyObj : p.keySet()) {
-							String key = keyObj.toString();
-							keys.add(key);
-						}
-						Collections.sort(keys);
+      if (intakeFile.outputFile.getParentFile().exists() == false)
+        intakeFile.outputFile.getParentFile().mkdirs();
+      try {
+        try (FileWriter fw = new FileWriter(intakeFile.outputFile)) {
+          try (BufferedWriter bw = new BufferedWriter(fw)) {
+            dumpDebug(bw);
+            bw.append("package ");
+            bw.append(intakeFile.javaPackageName);
+            bw.append(";\n");
+            List<String> importList = new ArrayList<>();
+            importList.add("java.util.Locale");
+            importList.add("java.util.ResourceBundle");
+            if ((implementsClass != null) && (implementsClass.isEmpty() == false))
+              importList.add(implementsClass);
+            if ((resourceBundleLoaderClass != null) && (resourceBundleLoaderClass.isEmpty() == false))
+              importList.add(resourceBundleLoaderClass);
+            Map<String, String> importToShort = handleImports(importList, bw);
+            bw.append("\n");
 
-						for (String actualKey : keys) {
-							String key = actualKey.toUpperCase(Locale.ENGLISH);
+            bw.append("public enum ");
+            bw.append(intakeFile.outputName);
+            if ((implementsClass != null) && (implementsClass.isEmpty() == false)) {
+              String className = Objects.requireNonNull(importToShort.get(implementsClass));
+              bw.append(" implements ").append(className);
+            }
+            bw.append(" {\n");
+            bw.append("\n");
+            boolean isFirst = true;
+            List<String> keys = new ArrayList<>();
+            for (Object keyObj : p.keySet()) {
+              String key = keyObj.toString();
+              keys.add(key);
+            }
+            Collections.sort(keys);
 
-							/* See if the front of the key matches any of the packageNames */
+            for (String actualKey : keys) {
+              String key = actualKey.toUpperCase(Locale.ENGLISH);
 
-							for (String prefix : intakeFile.packageName) {
-								if (key.startsWith(prefix)) {
+              /* See if the front of the key matches any of the packageNames */
 
-									/* Remove the key */
+              for (String prefix : intakeFile.packageName) {
+                if (key.startsWith(prefix)) {
 
-									key = key.substring(prefix.length());
+                  /* Remove the key */
 
-								}
-							}
+                  key = key.substring(prefix.length());
 
-							if (isFirst == true)
-								isFirst = false;
-							else
-								bw.append(", //\n");
-							bw.append("\t");
-							bw.append(key);
-							bw.append("(\"");
-							bw.append(actualKey);
-							bw.append("\")");
-						}
-						bw.append(";\n");
-						bw.append("\n");
+                }
+              }
 
-						bw.append("\tprivate final String mCode;\n");
-						bw.append("\n");
-						bw.append("\tprivate ").append(intakeFile.outputName).append("(String pCode) {\n");
-						bw.append("\t\tmCode = pCode;\n");
-						bw.append("\t}\n");
-						bw.append("\n");
-						if ((implementsClass != null) && (implementsClass.isEmpty() == false))
-							bw.append("\t@Override\n");
-						bw.append("\tpublic String getCode() {\n");
-						bw.append("\t\treturn mCode;\n");
-						bw.append("\t}\n");
-						bw.append("\n");
+              if (isFirst == true)
+                isFirst = false;
+              else
+                bw.append(", //\n");
+              bw.append("\t");
+              bw.append(key);
+              bw.append("(\"");
+              bw.append(actualKey);
+              bw.append("\")");
+            }
+            bw.append(";\n");
+            bw.append("\n");
 
-						if ((implementsClass != null) && (implementsClass.isEmpty() == false))
-							bw.append("\t@Override\n");
-						bw.append("\tpublic ResourceBundle getBundle(Locale pLocale) {\n");
-						bw.append("\t\treturn ResourceBundle.getBundle(\"").append(intakeFile.javaPackageName)
-							.append(".").append(intakeFile.inputName).append("\", pLocale);\n");
-						bw.append("\t}\n");
-						bw.append("\n");
-						bw.append("}\n");
-					}
-				}
-				buildContext.refresh(intakeFile.outputFile);
-			}
-			catch (IOException ex) {
-				throw new MojoExecutionException(
-					"Unable to write to enum inputFile: " + intakeFile.outputFile.getAbsolutePath(), ex);
-			}
+            bw.append("\tprivate final String mCode;\n");
+            bw.append("\n");
+            bw.append("\tprivate ").append(intakeFile.outputName).append("(String pCode) {\n");
+            bw.append("\t\tmCode = pCode;\n");
+            bw.append("\t}\n");
+            bw.append("\n");
+            if ((implementsClass != null) && (implementsClass.isEmpty() == false)) {
+              bw.append("\t/**\n");
+              bw.append("\t * @see ").append(implementsClass).append("#getCode()\n");
+              bw.append("\t */\n");
+              bw.append("\t@Override\n");
+            }
+            bw.append("\tpublic String getCode() {\n");
+            bw.append("\t\treturn mCode;\n");
+            bw.append("\t}\n");
+            bw.append("\n");
 
-		}
-		if (failed == true)
-			throw new MojoExecutionException("Failed to build enumerations due to previous errors");
-	}
+            if ((implementsClass != null) && (implementsClass.isEmpty() == false)) {
+              bw.append("\t/**\n");
+              bw.append("\t * @see ").append(implementsClass).append("#getBundle(java.util.Locale)\n");
+              bw.append("\t */\n");
+              bw.append("\t@Override\n");
+            }
+            bw.append("\tpublic ResourceBundle getBundle(Locale pLocale) {\n");
+            bw.append("\t\treturn ResourceBundle.getBundle(\"").append(intakeFile.javaPackageName).append(".")
+              .append(intakeFile.inputName).append("\", pLocale");
+            if ((resourceBundleLoaderClass != null) && (resourceBundleLoaderClass.isEmpty() == false)) {
+              String className = Objects.requireNonNull(importToShort.get(resourceBundleLoaderClass));
+              bw.append(",\n\t\t\t").append(className).append(".getClassLoader(").append(intakeFile.outputName)
+                .append(".class, \"").append(intakeFile.javaPackageName).append(".").append(intakeFile.inputName)
+                .append("\")");
+              bw.append(",\n\t\t\t").append(className).append(".getControl(").append(intakeFile.outputName)
+                .append(".class, \"").append(intakeFile.javaPackageName).append(".").append(intakeFile.inputName)
+                .append("\")");
+            }
+            bw.append(");\n");
+            bw.append("\t}\n");
+            bw.append("\n");
+            bw.append("}\n");
+          }
+        }
+        buildContext.refresh(intakeFile.outputFile);
+      }
+      catch (IOException ex) {
+        throw new MojoExecutionException(
+          "Unable to write to enum inputFile: " + intakeFile.outputFile.getAbsolutePath(), ex);
+      }
 
-	private void dumpDebug(BufferedWriter pWriter) throws IOException {
-		if (debugBuilder.length() > 0) {
-			pWriter.append("/*\n");
-			pWriter.append(debugBuilder.toString());
-			pWriter.append("*/\n");
-		}
-	}
+    }
+    if (failed == true)
+      throw new MojoExecutionException("Failed to build enumerations due to previous errors");
+  }
 
-	private void handleDefaults() {
-		if (outputDirectory == null)
-			outputDirectory = new File("target/generated-sources/i18n");
-		if (propsSuffix == null)
-			propsSuffix = ".properties";
-		if (packageSeparator == null)
-			packageSeparator = "_";
-	}
+  private Map<String, String> handleImports(Collection<String> pImports, BufferedWriter pWriter) throws IOException {
+    List<String> imports = new ArrayList<>(pImports);
+    Map<String, String> importToShort = new HashMap<>();
+    Collections.sort(imports);
+    String lastSection = ";;;;";
+    for (String importStr : imports) {
+
+      /* If the import string starts a new section, add an extra newline */
+
+      int firstIndex = importStr.indexOf('.');
+      String section = (firstIndex == -1 ? "" : importStr.substring(0, firstIndex));
+      if (section.equals(lastSection) == false) {
+        lastSection = section;
+        pWriter.append("\n");
+      }
+
+      /* Write the import */
+
+      pWriter.append("import ").append(importStr).append(";\n");
+
+      /* Set up the mapping table */
+
+      int lastIndex = importStr.lastIndexOf('.');
+      if (lastIndex == -1)
+        importToShort.put(importStr, importStr);
+      else
+        importToShort.put(importStr, importStr.substring(lastIndex + 1));
+    }
+    return importToShort;
+  }
+
+  private void dumpDebug(BufferedWriter pWriter) throws IOException {
+    if (debugBuilder.length() > 0) {
+      pWriter.append("/*\n");
+      pWriter.append(debugBuilder.toString());
+      pWriter.append("*/\n");
+    }
+  }
+
+  private void handleDefaults() {
+    if (outputDirectory == null)
+      outputDirectory = new File("target/generated-sources/i18n");
+    if (propsSuffix == null)
+      propsSuffix = ".properties";
+    if (packageSeparator == null)
+      packageSeparator = "_";
+  }
 }
