@@ -1,36 +1,24 @@
 package com.diamondq.maven;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Properties;
-
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
-import org.apache.maven.plugins.annotations.Component;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
 import org.apache.maven.plugins.annotations.Mojo;
 import org.apache.maven.plugins.annotations.Parameter;
 import org.codehaus.plexus.util.Scanner;
 import org.sonatype.plexus.build.incremental.BuildContext;
 
+import javax.inject.Inject;
+import java.io.*;
+import java.nio.file.Path;
+import java.util.*;
+
 /**
  * Goal which generates an Enum from the string keys in a Properties inputFile
  */
-@Mojo(name = "generateEnums", defaultPhase = LifecyclePhase.GENERATE_SOURCES)
+@Mojo(name = "generateEnums", defaultPhase = LifecyclePhase.GENERATE_SOURCES, threadSafe = true)
 public class GenerateEnums extends AbstractMojo {
-  @Component
+  @Inject
   protected BuildContext buildContext;
 
   /**
@@ -50,7 +38,7 @@ public class GenerateEnums extends AbstractMojo {
   private String         propsSuffix;
 
   /**
-   * Whether to recursive down the props directory.
+   * Whether to recursive down the directory.
    */
   @Parameter(defaultValue = "true", required = true)
   private boolean        recurse;
@@ -58,13 +46,13 @@ public class GenerateEnums extends AbstractMojo {
   @Parameter(defaultValue = "_", required = true)
   private String         packageSeparator;
 
-  @Parameter(required = false)
+  @Parameter()
   private String[]       keyPrefixes;
 
-  @Parameter(required = false)
+  @Parameter()
   private String         implementsClass;
 
-  @Parameter(required = false)
+  @Parameter()
   private String         resourceBundleLoaderClass;
 
   private StringBuilder  debugBuilder;
@@ -110,24 +98,9 @@ public class GenerateEnums extends AbstractMojo {
 
     @Override
     public String toString() {
-      StringBuilder sb = new StringBuilder();
-      sb.append("IntakeFile[inputFile=").append(inputFile).append(", packageName=[")
-        .append(String.join(", ", packageName));
-      sb.append("], javaPackageName=").append(javaPackageName).append(", relPath=").append(relPath).append("]");
-      return sb.toString();
-    }
-  }
-
-  @SuppressWarnings("unused")
-  private void recurseDirectory(File pDir, File pRootDir, File pOutputDir, List<IntakeFile> pResults) {
-    for (File file : pDir.listFiles()) {
-      if (file.isDirectory() == true)
-        recurseDirectory(file, pRootDir, pOutputDir, pResults);
-      else if (file.isFile() == true) {
-        if (file.getName().endsWith(propsSuffix)) {
-          buildIntakeFile(pRootDir, pOutputDir, pResults, file);
-        }
-      }
+        return "IntakeFile[inputFile=" + inputFile + ", packageName=[" +
+                String.join(", ", packageName) +
+                "], javaPackageName=" + javaPackageName + ", relPath=" + relPath + "]";
     }
   }
 
@@ -144,22 +117,22 @@ public class GenerateEnums extends AbstractMojo {
     if (offset != -1)
       outName = outName.substring(0, offset);
     String inName = outName;
-    if (Character.isUpperCase(outName.charAt(0)) == false)
+    if (!Character.isUpperCase(outName.charAt(0)))
       outName = Character.toUpperCase(outName.charAt(0)) + outName.substring(1);
     File outputFile = pOutputDir.toPath().resolve(relPath).resolve(outName + ".java").toFile();
 
-    /* Check to see if the output file is 'up-to-date' */
+    /* Check to see if the output file is 'up to date' */
 
-    if (buildContext.isUptodate(outputFile, pFile) == true)
+    if (buildContext.isUptodate(outputFile, pFile))
       return;
 
     /* Build the information needed for processing */
 
-    String packageBuilder = "";
+    StringBuilder packageBuilder = new StringBuilder();
     List<String> packageList = new ArrayList<>();
     for (int i = relPath.getNameCount() - 1; i >= 0; i--) {
-      packageBuilder = relPath.getName(i) + packageSeparator + packageBuilder;
-      packageList.add(0, packageBuilder.toUpperCase(Locale.ENGLISH));
+      packageBuilder.insert(0, relPath.getName(i) + packageSeparator);
+      packageList.add(0, packageBuilder.toString().toUpperCase(Locale.ENGLISH));
     }
     StringBuilder javaPackageBuilder = new StringBuilder();
     for (int i = 0; i < relPath.getNameCount(); i++) {
@@ -174,7 +147,7 @@ public class GenerateEnums extends AbstractMojo {
 
   private List<IntakeFile> processPropsDir() throws MojoExecutionException {
     File inDir = propsDir;
-    if ((inDir == null) || (inDir.exists() == false))
+    if ((inDir == null) || (!inDir.exists()))
       throw new MojoExecutionException("The propsDir " + (inDir == null ? "" : inDir.toString()) + " doesn't exist");
     File outDir = outputDirectory;
     inDir = inDir.getAbsoluteFile();
@@ -190,7 +163,6 @@ public class GenerateEnums extends AbstractMojo {
       }
     }
 
-    // recurseDirectory(inDir, inDir, results);
     return results;
   }
 
@@ -207,7 +179,7 @@ public class GenerateEnums extends AbstractMojo {
     File outDir = outputDirectory;
 
     if (!outDir.exists())
-      outDir.mkdirs();
+      if (!outDir.mkdirs()) throw new IllegalStateException("Unable to create output directory " + outDir);
 
     boolean failed = false;
 
@@ -229,11 +201,11 @@ public class GenerateEnums extends AbstractMojo {
         int offset = outName.lastIndexOf('.');
         if (offset != -1)
           outName = outName.substring(0, offset);
-        if (Character.isUpperCase(outName.charAt(0)) == false)
+        if (!Character.isUpperCase(outName.charAt(0)))
           outName = Character.toUpperCase(outName.charAt(0)) + outName.substring(1);
         File outputFile = outputDirectory.toPath().resolve(relPath).resolve(outName + ".java").toFile();
-        if (outputFile.exists() == true) {
-          outputFile.delete();
+        if (outputFile.exists()) {
+          if (!outputFile.delete()) throw new IllegalStateException("Unable to delete " + outputFile);
           buildContext.refresh(outputFile);
         }
       }
@@ -244,9 +216,6 @@ public class GenerateEnums extends AbstractMojo {
     for (IntakeFile intakeFile : processPropsDir()) {
 
       getLog().info("Processing: " + intakeFile.inputFile.getAbsolutePath());
-      // debugBuilder.append("Processing: " + intakeFile.file + "\n");
-      // debugBuilder.append("BuildContext3: " + (buildContext == null ? "(NULL)" : buildContext.toString()) +
-      // "\n");
 
       /* Read the properties inputFile */
 
@@ -263,8 +232,9 @@ public class GenerateEnums extends AbstractMojo {
 
       /* Now generate an enum class */
 
-      if (intakeFile.outputFile.getParentFile().exists() == false)
-        intakeFile.outputFile.getParentFile().mkdirs();
+      if (!intakeFile.outputFile.getParentFile().exists()) {
+          if (!intakeFile.outputFile.getParentFile().mkdirs()) throw new IllegalStateException("Unable to create " + intakeFile.outputFile.getParentFile());
+      }
       try {
         try (FileWriter fw = new FileWriter(intakeFile.outputFile)) {
           try (BufferedWriter bw = new BufferedWriter(fw)) {
@@ -275,16 +245,16 @@ public class GenerateEnums extends AbstractMojo {
             List<String> importList = new ArrayList<>();
             importList.add("java.util.Locale");
             importList.add("java.util.ResourceBundle");
-            if ((implementsClass != null) && (implementsClass.isEmpty() == false))
+            if ((implementsClass != null) && (!implementsClass.isEmpty()))
               importList.add(implementsClass);
-            if ((resourceBundleLoaderClass != null) && (resourceBundleLoaderClass.isEmpty() == false))
+            if ((resourceBundleLoaderClass != null) && (!resourceBundleLoaderClass.isEmpty()))
               importList.add(resourceBundleLoaderClass);
             Map<String, String> importToShort = handleImports(importList, bw);
             bw.append("\n");
 
             bw.append("public enum ");
             bw.append(intakeFile.outputName);
-            if ((implementsClass != null) && (implementsClass.isEmpty() == false)) {
+            if ((implementsClass != null) && (!implementsClass.isEmpty())) {
               String className = Objects.requireNonNull(importToShort.get(implementsClass));
               bw.append(" implements ").append(className);
             }
@@ -313,7 +283,7 @@ public class GenerateEnums extends AbstractMojo {
                 }
               }
 
-              if (isFirst == true)
+              if (isFirst)
                 isFirst = false;
               else
                 bw.append(", //\n");
@@ -332,7 +302,7 @@ public class GenerateEnums extends AbstractMojo {
             bw.append("\t\tmCode = pCode;\n");
             bw.append("\t}\n");
             bw.append("\n");
-            if ((implementsClass != null) && (implementsClass.isEmpty() == false)) {
+            if ((implementsClass != null) && (!implementsClass.isEmpty())) {
               bw.append("\t/**\n");
               bw.append("\t * @see ").append(implementsClass).append("#getCode()\n");
               bw.append("\t */\n");
@@ -343,7 +313,7 @@ public class GenerateEnums extends AbstractMojo {
             bw.append("\t}\n");
             bw.append("\n");
 
-            if ((implementsClass != null) && (implementsClass.isEmpty() == false)) {
+            if ((implementsClass != null) && (!implementsClass.isEmpty())) {
               bw.append("\t/**\n");
               bw.append("\t * @see ").append(implementsClass).append("#getBundle(java.util.Locale)\n");
               bw.append("\t */\n");
@@ -352,7 +322,7 @@ public class GenerateEnums extends AbstractMojo {
             bw.append("\tpublic ResourceBundle getBundle(Locale pLocale) {\n");
             bw.append("\t\treturn ResourceBundle.getBundle(\"").append(intakeFile.javaPackageName).append(".")
               .append(intakeFile.inputName).append("\", pLocale");
-            if ((resourceBundleLoaderClass != null) && (resourceBundleLoaderClass.isEmpty() == false)) {
+            if ((resourceBundleLoaderClass != null) && (!resourceBundleLoaderClass.isEmpty())) {
               String className = Objects.requireNonNull(importToShort.get(resourceBundleLoaderClass));
               bw.append(",\n\t\t\t").append(className).append(".getClassLoader(").append(intakeFile.outputName)
                 .append(".class, \"").append(intakeFile.javaPackageName).append(".").append(intakeFile.inputName)
@@ -375,7 +345,7 @@ public class GenerateEnums extends AbstractMojo {
       }
 
     }
-    if (failed == true)
+    if (failed)
       throw new MojoExecutionException("Failed to build enumerations due to previous errors");
   }
 
@@ -390,7 +360,7 @@ public class GenerateEnums extends AbstractMojo {
 
       int firstIndex = importStr.indexOf('.');
       String section = (firstIndex == -1 ? "" : importStr.substring(0, firstIndex));
-      if (section.equals(lastSection) == false) {
+      if (!section.equals(lastSection)) {
         lastSection = section;
         pWriter.append("\n");
       }
